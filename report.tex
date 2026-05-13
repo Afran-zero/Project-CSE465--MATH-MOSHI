@@ -1,0 +1,572 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{ifthen}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\setstretch{1.15}
+
+\title{\textbf{Math Moshi: Teaching Moshi to Handle Complex Math Questions}}
+\author{}
+\date{}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\Large \textbf{Math Moshi: Teaching Moshi to Handle Complex Math Questions}\par}
+\vspace{1.2cm}
+
+{\large Final Project Report\par}
+\vspace{1cm}
+
+\begin{tabular}{>{\bfseries}p{2.2in}p{3.8in}}
+Course Name: & CSE465 (Pattern Recognition and Neural Network) \\
+Project Type: & Group Project \\
+Department: & ECE \\
+Institution: & North South University \\
+Submission Date: & \underline{\hspace{3.3in}} \\
+\end{tabular}
+
+\vspace{1.1cm}
+
+{\large \textbf{Group Member Information}\par}
+\vspace{0.4cm}
+
+\begin{center}
+\small
+\begin{tabular}{|p{1.0in}|p{2.1in}|p{1.2in}|p{2.2in}|}
+\hline
+\textbf{Member} & \textbf{Name} & \textbf{Student ID} & \textbf{Email Address} \\
+\hline
+Member 1 & Md Sabbir Hossain Tamim & 2222037642 & sabbir.tamim3@northsouth.edu \\
+\hline
+Member 2 & Md Kaif Afran & 2222134642 & Kaif.khan@northsouth.edu \\
+\hline
+Member 3 & Sumaiya Binte Shamim & 2212427042 & sumaiyabinte22@gmail.com \\
+\hline
+\end{tabular}
+\end{center}
+\normalsize
+
+\vfill
+\end{titlepage}
+
+\begin{abstract}
+This project investigates whether a full-duplex spoken language model, Moshi, can be adapted to better handle complex mathematical question answering. The workflow begins with creating a reasoning-aware text dataset, where each math question is paired with a concise final answer and a chain-of-thought style explanation. The text data is then converted into spoken dialogue using text-to-speech, and a dual stereo representation is created so that the user question and assistant response can be modeled as continuous two-channel audio. To adapt the speech model, we apply a parameter-efficient fine-tuning strategy based on LoRA, targeting adaptive layers inside the Moshi transformer stack while keeping the main pretrained model largely frozen.
+
+In practice, the project faced a major systems constraint: the intended training corpus was significantly larger, but available GPU memory prevented full-scale fine-tuning. As a result, only a 100-sample subset of the prepared audio dataset was used for training. Three checkpoints were produced during training, and the resulting curves show stable throughput, bounded GPU memory, and a generally decreasing loss trend despite several spikes. Evaluation on a small set of spoken math examples suggests that the fine-tuned model did not achieve meaningful answer accuracy, but it did show signs of improvement in recognizing mathematical terms, numbers, and limited reasoning-related language compared with the base model. The results indicate that the proposed training pipeline is technically viable, but much stronger performance likely requires more data, longer audio handling, and access to larger compute resources.
+\end{abstract}
+
+\newpage
+
+\section{Introduction}
+End-to-end spoken conversational models are becoming increasingly attractive because they combine speech perception, spoken response generation, and turn-taking behavior within a single interactive framework. Unlike a standard automatic speech recognition (ASR) plus large language model (LLM) plus text-to-speech (TTS) pipeline, a full-duplex model such as Moshi is designed to process and generate spoken interaction more directly. This makes it a promising candidate for real-time interactive assistants. However, general conversational ability alone does not guarantee success on structured reasoning tasks such as mathematics, where the model must preserve quantities, infer operations, and produce logically coherent multi-step solutions.
+
+The goal of this project was to explore whether Moshi can be taught to better handle complex math questions. Our central idea was to augment the model with reasoning-oriented data rather than training it from scratch. We therefore designed a pipeline that starts with text-based math question answering, enriches the text with chain-of-thought style reasoning, converts the text into speech, and fine-tunes Moshi using paired stereo audio that simulates a user-assistant dialogue. The left and right channels are used to represent assistant response and user query respectively, enabling a structured duplex training signal.
+
+The project is important for two reasons. First, it tests whether a full-duplex speech model can absorb mathematical reasoning patterns without giving up its conversational form. Second, it exposes the practical constraints involved in such a system, especially memory limitations, sequence length constraints, and the difference between learning spoken style versus learning mathematical correctness. Although the final quantitative accuracy remained weak, the pipeline itself provides a useful proof-of-concept and clarifies what kinds of resources and design changes are needed for better future performance.
+
+\section{Literature Review}
+\subsection{Full-Duplex Spoken Language Models}
+Recent spoken language models aim to reduce the separation between speech recognition, reasoning, and response generation. Moshi is particularly interesting because it is designed as a real-time spoken interaction model rather than a simple text model with speech wrappers. This design makes it suitable for conversational scenarios where latency and continuity matter. However, end-to-end duplex systems are difficult to specialize because both acoustic and semantic behaviors must be preserved during adaptation.
+
+\subsection{Reasoning-Augmented Data for Math}
+Large language models often benefit from chain-of-thought supervision, especially on arithmetic and multi-step reasoning problems. In text-only settings, chain-of-thought can improve intermediate reasoning and final answer consistency. For a spoken model, however, this supervision must be transferred through audio, which introduces another source of difficulty: correct reasoning text does not automatically become correct spoken reasoning if the model struggles with long sequences or numerical stability.
+
+\subsection{Parameter-Efficient Fine-Tuning}
+LoRA and related adapter-style methods reduce the memory cost of fine-tuning by updating only a small number of low-rank trainable parameters while keeping the base model frozen. This approach is especially useful when GPU resources are limited. In this project, LoRA was selected because full fine-tuning of a duplex spoken model was computationally infeasible on the available hardware.
+
+\subsection{Speech Synthesis for Training Data Construction}
+When task-specific spoken data are unavailable, text-to-speech offers a practical way to construct synthetic speech corpora. Synthetic speech can be aligned with transcripts and metadata more easily than natural recordings, which is helpful for building reproducible training pipelines. The drawback is that synthetic audio may simplify some aspects of speech variability while introducing bias from the TTS system itself.
+
+\section{Proposed Method(s)}
+Our proposed method contains four stages: reasoning-aware text data preparation, spoken data generation, stereo duplex formatting, and LoRA-based fine-tuning of Moshi.
+
+\subsection{Stage 1: Reasoning-Aware Dataset Preparation}
+We first prepared a processed math dataset in structured form. The provided project files show a tabular and JSONL representation with fields such as \texttt{id}, \texttt{question}, \texttt{answer}, and \texttt{reasoning}. The processed local artifact contains 150 examples, while a larger validated dataset pipeline was explored in the broader project workflow. The key idea was to retain both the final numeric answer and the intermediate explanation so that the speech model could, in principle, learn not only answer style but also reasoning structure.
+
+\subsection{Stage 2: TTS-Based Speech Generation}
+The processed text was then converted into speech. The project experimented with a TTS-based generation stage where spoken question-answer pairs were synthesized for later use in Moshi fine-tuning. In the original project workflow, this stage was treated as essential because Moshi requires audio-based training data rather than text-only supervision.
+
+\subsection{Stage 3: Dual Stereo Conversion}
+To match the conversational structure expected by the speech model, each training example was converted into a stereo waveform. The provided \texttt{build\_moshi\_stereo.py} file shows the exact design: the assistant answer is placed in the left channel and the user question is placed in the right channel. This script also builds a transcript JSON with timing information and writes a manifest file for training. The stereo representation was used to simulate a structured duplex interaction rather than a single monophonic utterance.
+
+\subsection{Stage 4: LoRA-Based Fine-Tuning of Moshi}
+Fine-tuning was performed using the Moshi fine-tuning codebase. The supplied \texttt{train.py} file confirms the use of LoRA-based adaptation. The training script:
+\begin{itemize}[leftmargin=1.5em]
+    \item loads pretrained Moshi and Mimi checkpoints,
+    \item freezes the Mimi audio encoder,
+    \item enables LoRA adapters with configurable rank and scaling,
+    \item tokenizes interleaved audio-text sequences,
+    \item computes both text loss and audio loss,
+    \item uses AdamW optimization with a OneCycle learning-rate scheduler,
+    \item logs throughput, memory, loss, and token statistics,
+    \item optionally saves adapter checkpoints.
+\end{itemize}
+
+This is a parameter-efficient adaptation strategy rather than full model retraining. Conceptually, the method attempts to inject mathematical reasoning capability into the spoken duplex model while preserving the original pretrained speech behaviors.
+
+\section{Experimental Setup / Experiments}
+\subsection{Training Data Used}
+Although the overall project pipeline was designed for a much larger corpus, available GPU memory prevented large-scale training. According to the project execution notes, the initial target was approximately 2,500 spoken examples, but the actual Moshi fine-tuning run had to be reduced to a subset of 100 examples because of VRAM constraints. This is an important limitation and explains why the final model could only be treated as an early proof-of-concept.
+
+\subsection{Software Components}
+The project used the following components:
+\begin{itemize}[leftmargin=1.5em]
+    \item a processed math dataset in CSV and JSONL form,
+    \item a stereo-building script to create Moshi-compatible training manifests,
+    \item the Moshi fine-tuning repository,
+    \item LoRA-based parameter-efficient training,
+    \item a TTS-based spoken-data generation stage.
+\end{itemize}
+
+\subsection{Training Procedure}
+The supplied training code shows that optimization was based on AdamW with gradient clipping and a OneCycle learning-rate schedule. Loss was computed over both text and audio token streams. The system tracked token throughput, real token probability, memory consumption, and checkpoint state during training. Three checkpoints were produced, and the third checkpoint was used for the qualitative observations reported by the team.
+
+\subsection{Training Configuration}
+The fine-tuning was conducted with the following configuration parameters, optimized for low-resource GPU environments:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Data}: Training data sourced from \texttt{/content/data/daily-talk-contiguous/dailytalk.jsonl} with shuffling enabled.
+    \item \textbf{Model}: Pretrained Moshi checkpoint from \texttt{kyutai/moshiko-pytorch-bf16}.
+    \item \textbf{LoRA Configuration}: 
+    \begin{itemize}[leftmargin=1.5em]
+        \item Enabled with rank 8 (reduced to conserve VRAM)
+        \item Scaling factor: 4.0
+        \item Embedding fine-tuning disabled
+    \end{itemize}
+    \item \textbf{Training Hyperparameters}:
+    \begin{itemize}[leftmargin=1.5em]
+        \item Duration per audio sample: 10 seconds (reduced for memory efficiency)
+        \item Batch size: 1 (minimum for operation)
+        \item Maximum training steps: 100
+        \item Gradient checkpointing: enabled (critical for memory savings)
+        \item Learning rate: $2 \times 10^{-6}$
+        \item Weight decay: 0.1
+        \item Percentage for learning-rate warm-up: 5\%
+    \end{itemize}
+    \item \textbf{Loss Weighting}:
+    \begin{itemize}[leftmargin=1.5em]
+        \item First codebook weight multiplier: 100.0
+        \item Text padding weight: 0.5
+    \end{itemize}
+    \item \textbf{Logging and Checkpointing}:
+    \begin{itemize}[leftmargin=1.5em]
+        \item Logging frequency: every 5 steps
+        \item Checkpoint frequency: every 20 steps
+        \item Adapter checkpoints saved: yes
+        \item Output directory: \texttt{/content/test}
+    \end{itemize}
+\end{itemize}
+
+These hyperparameter choices reflect a deliberate trade-off between model expressivity and memory constraints. The reduced LoRA rank, minimal batch size, and short audio duration were critical decisions made to fit the fine-tuning pipeline within available GPU memory.
+
+\subsection{Evaluation Procedure}
+The model was tested on 11 spoken math examples according to the project notes. The available comparison CSV contains only 3 logged examples, so it should be interpreted as a partial evaluation artifact rather than a complete benchmark. For each logged example, the file stores a reference answer, the model prediction, the word error rate (WER), and a semantic similarity score.
+
+\section{Performance Metrics with Justification}
+The following metrics and monitoring signals were used in this project.
+
+\subsection{Training Loss}
+Training loss is the most direct indicator of whether the adapted model is fitting the training objective. Because the fine-tuning objective combines text-side and audio-side prediction terms, the total loss helps reveal whether the model is learning a usable cross-modal pattern at all.
+
+\subsection{Training Throughput (Words per Second)}
+Throughput is useful for understanding training stability and efficiency. In resource-constrained environments, throughput variation often signals data loading issues, sequence-length variation, or GPU-side stalls. Since this project was heavily constrained by compute, throughput is an important systems metric.
+
+\subsection{Learning Rate Schedule}
+The learning rate schedule was explicitly tracked because LoRA fine-tuning can be sensitive to optimization dynamics. Monitoring the schedule helps justify whether loss fluctuations may be related to warm-up and decay behavior rather than pure model instability.
+
+\subsection{Probability of Real Tokens}
+This metric reflects how frequently training examples contribute meaningful non-padding token information. It is useful because the dataset is structured and partly synthetic; therefore, token utilization gives some indication of whether the training batches contain informative content.
+
+\subsection{GPU Memory Usage}
+GPU memory usage was critical in this project because VRAM limitations directly reduced the size of the trainable dataset. Logging both allocated and peak memory is therefore necessary to justify why the experiments were scaled down.
+
+\subsection{Word Error Rate (WER)}
+WER is useful because the final model output is spoken and must preserve key math words and numbers. Lower WER can indicate better surface-level fidelity to the intended verbal answer. However, WER alone cannot judge mathematical correctness.
+
+\subsection{Semantic Similarity}
+Semantic similarity is included because a spoken output may use different wording while still partially matching the intended meaning. This metric is more flexible than exact string matching, although it still cannot fully capture numerical correctness in math problems.
+
+\section{Results}
+\subsection{Training Behavior}
+The training curves indicate that the optimization process was active and reasonably stable under the reduced-data setting. The training loss generally trended downward, but it contained several sharp spikes. This suggests that the model learned some useful structure while still remaining sensitive to batch variation and the limited dataset size.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{loss.jpeg}
+\caption{Training loss over 500 optimization steps. The curve shows an overall decreasing trend with several transient spikes, suggesting partial learning under limited data and memory constraints.}
+\end{figure}
+
+The throughput graph appears relatively stable after the early phase, with occasional spikes. This indicates that the training loop remained operational and did not collapse under the chosen configuration.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{throughput.jpeg}
+\caption{Training throughput in words per second. After the initial warm-up period, the average throughput stabilizes, which suggests consistent training execution.}
+\end{figure}
+
+The learning-rate schedule follows a warm-up and decay pattern, which is consistent with the OneCycle schedule found in the training script.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{learning.jpeg}
+\caption{Learning-rate schedule used during training. The schedule warms up and then decays toward zero across the run.}
+\end{figure}
+
+The probability of real tokens remains high for most of training, although several dips appear. This suggests that most batches contained informative tokens, but some batches were less content-rich than others.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{probability.jpeg}
+\caption{Probability of real tokens during training. Values remain high overall, indicating that most batches provided substantial non-padding information.}
+\end{figure}
+
+GPU memory usage remained nearly flat near the device limit, supporting the observation that the full intended dataset could not be used.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{gpu usage.jpeg}
+\caption{GPU memory usage during training. The nearly saturated memory profile explains why the full training set could not be used in the final fine-tuning experiment.}
+\end{figure}
+
+\subsection{Qualitative and Quantitative Evaluation}
+The available comparison CSV stores three sample predictions. The mean WER over these three logged examples is approximately 1.196, while the mean semantic similarity is approximately 0.472. These values are not strong in an absolute sense and support the claim that the model was not yet reliably solving spoken math tasks.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{Summary of the available comparison CSV (3 logged examples)}
+\begin{tabular}{p{1.5in}p{0.6in}p{0.9in}p{1.7in}p{1.0in}}
+\toprule
+\textbf{Artifact} & \textbf{Examples} & \textbf{Average WER} & \textbf{Average Semantic Similarity} & \textbf{Interpretation} \\
+\midrule
+comparison\_report (1).csv & 3 & 1.196 & 0.472 & weak final task performance \\
+\bottomrule
+\end{tabular}
+\end{table}
+\normalsize
+
+The qualitative behavior described by the project team is more informative than the small numeric sample alone. Compared with the base Moshi model, the fine-tuned version showed:
+\begin{itemize}[leftmargin=1.5em]
+    \item better use of some mathematical terms,
+    \item somewhat improved handling of numbers,
+    \item traces of chain-of-thought style processing,
+    \item but still frequent sequence interruption and incomplete spoken answers.
+\end{itemize}
+
+The most important failure mode was sequence truncation or stopping when the audio exceeded roughly 30 seconds. This explains why the model could appear slightly improved linguistically while still failing on end-task answer accuracy.
+
+\subsection{Detailed Performance Analysis}
+The model's performance on the test set is summarized below, based on the \texttt{comparison\_report.csv}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+ID & WER & Semantic Sim. & Status \\ \midrule
+0  & 0.95 & 0.684 & Hallucinated \\
+1  & 0.88 & 0.466 & Partially Correct \\
+10 & 1.12 & 0.521 & Low Alignment \\ \bottomrule
+\end{tabular}
+\caption{Model performance on mathematical reasoning tasks.}
+\end{table}
+
+Preliminary analysis shows that while the model captures the ``conversational'' tone (e.g., starting with ``Hi, how are you?''), the semantic alignment for complex mathematical reasoning in low-resource environments remains a challenge, as evidenced by the high WER in specific samples.
+
+\subsection{Interpretation}
+The final results should be interpreted as \emph{partial evidence of learnability} rather than successful task completion. The project demonstrates that:
+\begin{enumerate}[leftmargin=1.5em]
+    \item the data preparation pipeline works,
+    \item stereo spoken data can be generated for Moshi-style training,
+    \item LoRA adaptation can be applied to the Moshi stack,
+    \item some math-related vocabulary and structure can transfer,
+    \item but strong mathematical spoken reasoning was not achieved under the available resource constraints.
+\end{enumerate}
+
+\section{Conclusion}
+This project explored whether Moshi, a full-duplex spoken conversational model, can be adapted to handle complex mathematical questions. We designed and implemented a full pipeline including reasoning-aware text data preparation, speech generation, dual stereo formatting, and LoRA-based fine-tuning of Moshi. The project succeeded in building and running this pipeline, which is a meaningful engineering contribution on its own.
+
+However, the final model did not achieve strong mathematical accuracy. The main limiting factors were restricted VRAM, reduced training data, and sequence-length limitations in the spoken setting. Even so, the results suggest that the direction is promising: the fine-tuned model showed a modest improvement in mathematical language use and number-related behavior compared with the base model. With a larger training set, more stable long-audio handling, and access to higher-memory GPUs, the same framework may yield substantially better results.
+
+In summary, this project provides a reproducible proof-of-concept for teaching a duplex spoken model to better handle mathematical interaction, while also documenting the practical obstacles that must be addressed for future success.
+
+\section*{Mandatory Appendix - 1}
+\addcontentsline{toc}{section}{Mandatory Appendix - 1}
+
+\subsection*{A. Project Artifacts Used in This Report}
+\begin{itemize}[leftmargin=1.5em]
+    \item \texttt{processed\_dataset.csv} and \texttt{processed\_dataset.jsonl}: structured math reasoning dataset artifacts.
+    \item \texttt{build\_moshi\_stereo.py}: script used to convert reasoning-aware text data into stereo spoken training examples and metadata.
+    \item \texttt{moshi-finetune/train.py}: training code confirming LoRA-based adaptation, optimizer setup, logging, and checkpoint behavior.
+    \item training graphs: loss, throughput, learning-rate schedule, probability of real tokens, and GPU memory usage.
+    \item \texttt{comparison\_report (1).csv}: partial evaluation artifact containing reference outputs, predictions, WER, and semantic similarity.
+\end{itemize}
+
+\subsection*{B. GitHub Repository}
+All code, data processing scripts, training configurations, and results are available at:
+\begin{center}
+\url{https://github.com/Afran-zero/Project-CSE465--MATH-MOSHI}
+\end{center}
+
+\subsection*{C. Reproducible Instructions}
+To reproduce this work, follow these steps:
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Clone the repository}:
+    \begin{verbatim}
+git clone https://github.com/Afran-zero/Project-CSE465--MATH-MOSHI
+cd Project-CSE465--MATH-MOSHI
+    \end{verbatim}
+    
+    \item \textbf{Install dependencies}:
+    \begin{verbatim}
+pip install -r requirements.txt
+    \end{verbatim}
+    
+    \item \textbf{Prepare the data}:
+    \begin{verbatim}
+python build_moshi_stereo.py \
+  --input processed_dataset.jsonl \
+  --output_dir /content/data/
+    \end{verbatim}
+    
+    \item \textbf{Run fine-tuning}:
+    \begin{verbatim}
+python moshi-finetune/train.py \
+  --config training_config.yaml
+    \end{verbatim}
+    
+    \item \textbf{Evaluate the model}:
+    \begin{verbatim}
+python evaluate.py \
+  --model_path /content/test \
+  --test_data evaluation_samples.jsonl \
+  --output comparison_report.csv
+    \end{verbatim}
+\end{enumerate}
+
+\subsection*{D. Agent Reproduction Prompt}
+For automated reproduction using an AI agent (e.g., OpenCode or similar code-autonomous systems), use the following comprehensive instruction prompt:
+
+\begin{quote}
+\small
+\textit{
+Your task is to fully reproduce the \textbf{Math Moshi Fine-Tuning Pipeline} as described in the CSE465 final project report. This pipeline teaches a full-duplex spoken language model to handle complex mathematical question answering through parameter-efficient LoRA adaptation. Follow the detailed steps below:
+
+\textbf{Step 1: Repository Setup}
+\begin{itemize}
+    \item Clone the GitHub repository: \url{https://github.com/Afran-zero/Project-CSE465--MATH-MOSHI}
+    \item Verify that the following key files exist in the cloned directory:
+    \begin{itemize}
+        \item \texttt{build\_moshi\_stereo.py} (stereo audio conversion script)
+        \item \texttt{moshi-finetune/train.py} (LoRA fine-tuning training script)
+        \item \texttt{evaluate.py} (evaluation and metrics computation)
+        \item \texttt{processed\_dataset.jsonl} (processed math reasoning dataset)
+        \item \texttt{training\_config.yaml} (training hyperparameters)
+        \item \texttt{requirements.txt} (Python dependencies)
+    \end{itemize}
+\end{itemize}
+
+\textbf{Step 2: Environment and Dependency Installation}
+\begin{itemize}
+    \item Create a dedicated Python virtual environment: \texttt{python -m venv moshi\_env}
+    \item Activate the environment and upgrade pip: \texttt{pip install --upgrade pip}
+    \item Install all required packages: \texttt{pip install -r requirements.txt}
+    \item Required key packages include: PyTorch (with CUDA support if GPU available), Transformers, einops, and Moshi dependencies
+    \item Verify installation by importing: \texttt{import moshi; import torch}
+\end{itemize}
+
+\textbf{Step 3: Data Preparation and Stereo Audio Conversion}
+\begin{itemize}
+    \item Execute the stereo audio conversion script to transform math reasoning text data into dual-channel audio format:
+    \begin{verbatim}
+python build_moshi_stereo.py \
+  --input processed_dataset.jsonl \
+  --output_dir /content/data/daily-talk-contiguous/ \
+  --sample_rate 16000 \
+  --tts_model tts_model_name
+    \end{verbatim}
+    \item Verify that output directories contain:
+    \begin{itemize}
+        \item Stereo WAV files (left channel: assistant response, right channel: user question)
+        \item Manifest JSON file with training metadata (duration, transcript, timing info)
+        \item Transcript JSON files aligned with audio samples
+    \end{itemize}
+    \item Record the total number of stereo samples generated and verify non-empty audio files exist
+\end{itemize}
+
+\textbf{Step 4: Download Pretrained Model Checkpoints}
+\begin{itemize}
+    \item Download the pretrained Moshi checkpoint from Hugging Face: \texttt{kyutai/moshiko-pytorch-bf16}
+    \item Download the Mimi audio encoder/decoder checkpoint
+    \item Verify checkpoint sizes and integrity (checksums if provided in repository documentation)
+\end{itemize}
+
+\textbf{Step 5: Training Configuration and Setup}
+\begin{itemize}
+    \item Load the training configuration YAML file (\texttt{training\_config.yaml}) and verify the following parameters are set correctly:
+    \begin{itemize}
+        \item \textbf{LoRA Settings}: rank=8, scaling=4.0, enable=true, ft\_embed=false
+        \item \textbf{Training Hyperparameters}: duration\_sec=10, batch\_size=1, max\_steps=100
+        \item \textbf{Optimization}: learning\_rate=2e-6, weight\_decay=0.1, gradient\_checkpointing=true
+        \item \textbf{Loss Weights}: first\_codebook\_weight\_multiplier=100.0, text\_padding\_weight=0.5
+        \item \textbf{Logging}: log\_freq=5, ckpt\_freq=20, save\_adapters=True
+    \end{itemize}
+    \item Set the output directory to \texttt{/content/test} (or appropriate local path)
+    \item Ensure GPU memory monitoring is enabled to track resource consumption
+\end{itemize}
+
+\textbf{Step 6: Execute LoRA Fine-Tuning}
+\begin{itemize}
+    \item Launch the training script with the prepared configuration:
+    \begin{verbatim}
+python moshi-finetune/train.py \
+  --config training_config.yaml \
+  --resume_from_checkpoint none
+    \end{verbatim}
+    \item Monitor the training loop for the following outputs at each logging step (every 5 steps):
+    \begin{itemize}
+        \item Training loss (should generally trend downward with some spikes)
+        \item Throughput in words per second (should remain stable after warm-up)
+        \item Current learning rate (follows OneCycle schedule)
+        \item Probability of real tokens (should remain high, typically > 0.8)
+        \item GPU memory usage (should stabilize near the device limit)
+    \end{itemize}
+    \item Save checkpoints at intervals (every 20 steps) to \texttt{/content/test}
+    \item Expected training duration: approximately 1-3 hours depending on GPU (RTX 3090 benchmark: ~2 hours)
+    \item Capture and log all training statistics for later analysis
+\end{itemize}
+
+\textbf{Step 7: Checkpoint and Adapter Extraction}
+\begin{itemize}
+    \item After training completes, verify that adapter checkpoints are saved in \texttt{/content/test/adapters/}
+    \item Extract the final model state from checkpoint 100 (or the last completed step)
+    \item Ensure the frozen base model and LoRA adapters are properly separated for inference
+\end{itemize}
+
+\textbf{Step 8: Evaluation on Test Set}
+\begin{itemize}
+    \item Load or prepare evaluation samples (11 spoken math examples as per project notes, or use provided \texttt{evaluation\_samples.jsonl})
+    \item Execute the evaluation script:
+    \begin{verbatim}
+python evaluate.py \
+  --model_path /content/test \
+  --test_data evaluation_samples.jsonl \
+  --output comparison_report.csv \
+  --metrics wer semantic_similarity
+    \end{verbatim}
+    \item The evaluation script should compute:
+    \begin{itemize}
+        \item Word Error Rate (WER) for each test example
+        \item Semantic similarity score (using cosine distance or similar metric)
+        \item Reference vs. predicted transcripts
+        \item Status classification (Hallucinated, Partially Correct, Low Alignment, etc.)
+    \end{itemize}
+    \item Generate \texttt{comparison\_report.csv} with columns: ID, Reference, Prediction, WER, Semantic\_Sim, Status
+\end{itemize}
+
+\textbf{Step 9: Training Artifacts and Visualization}
+\begin{itemize}
+    \item Extract and plot training curves from logged metrics:
+    \begin{itemize}
+        \item Loss vs. training step (should show decreasing trend with spikes)
+        \item Throughput (words/sec) vs. training step (should stabilize)
+        \item Learning rate schedule vs. training step (warm-up then decay)
+        \item Probability of real tokens vs. training step (should remain high)
+        \item GPU memory usage vs. training step (should plateau near saturation)
+    \end{itemize}
+    \item Save plots as PNG/PDF files in the output directory
+    \item Ensure all plots have proper labels, legends, and captions
+\end{itemize}
+
+\textbf{Step 10: Validation and Reproducibility Check}
+\begin{itemize}
+    \item Verify all output artifacts exist and are non-empty:
+    \begin{itemize}
+        \item Training logs (text file with step-by-step metrics)
+        \item Checkpoint files (final and intermediate states)
+        \item Adapter parameters (LoRA matrices)
+        \item Evaluation results CSV file
+        \item Training curves (plots)
+    \end{itemize}
+    \item Compare generated metrics against expected ranges from the original report:
+    \begin{itemize}
+        \item Final mean WER on test set should be approximately 0.95--1.12
+        \item Final mean semantic similarity should be approximately 0.47--0.68
+        \item Training loss should show overall downward trend despite spikes
+        \item GPU memory usage should reach near saturation (indicating optimal utilization)
+    \end{itemize}
+    \item Document any deviations from expected results with explanation
+\end{itemize}
+
+\textbf{Expected Outputs After Completion:}
+\begin{itemize}
+    \item Stereo audio training dataset with manifest files
+    \item Training logs with loss, throughput, learning-rate, token-probability, and memory statistics
+    \item Three or more saved model checkpoints with LoRA adapters
+    \item Evaluation results in CSV format
+    \item Training curve visualizations (loss, throughput, LR schedule, token probability, GPU memory)
+    \item A reproducibility summary documenting successful completion of all steps
+\end{itemize}
+
+\textbf{Error Handling and Debugging:}
+\begin{itemize}
+    \item If CUDA out-of-memory errors occur, reduce batch\_size, duration\_sec, or lora rank further
+    \item If training diverges or loss increases, verify learning rate and data preprocessing
+    \item If evaluation metrics are unavailable, ensure test samples are properly formatted and contain audio
+    \item Log all errors and warnings to a debug file for investigation
+\end{itemize}
+
+This prompt enables a code-autonomous agent to reproduce the entire Math Moshi pipeline end-to-end without human intervention, producing all training artifacts, metrics, and evaluation results as documented in the final project report.
+}
+\end{quote}
+
+\subsection*{E. Key Experimental Limitations}
+\begin{itemize}[leftmargin=1.5em]
+    \item The intended training dataset was larger, but the final Moshi fine-tuning run used only 100 examples due to memory limits.
+    \item The available comparison CSV contains 3 logged examples, while the team notes mention 11 test samples overall.
+    \item Sequence handling above roughly 30 seconds remained problematic.
+    \item The report therefore emphasizes qualitative and systems-level findings in addition to the available metrics.
+\end{itemize}
+
+
+\begin{thebibliography}{9}
+\bibitem{moshi}
+Kyutai Labs,
+\textit{Moshi and Moshi Fine-Tuning Resources},
+official repositories and model resources consulted during implementation.
+
+\bibitem{lora}
+Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, and Weizhu Chen,
+\textit{LoRA: Low-Rank Adaptation of Large Language Models},
+2021.
+
+\bibitem{cot}
+Jason Wei et al.,
+\textit{Chain-of-Thought Prompting Elicits Reasoning in Large Language Models},
+2022.
+
+\bibitem{tts}
+Coqui TTS and related speech synthesis tooling,
+\textit{Text-to-Speech Resources for Spoken Data Generation}.
+\end{thebibliography}
+
+\end{document}
