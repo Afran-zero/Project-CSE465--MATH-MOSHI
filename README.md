@@ -3,6 +3,11 @@
 ## Project Overview
 
 This project investigates whether **Moshi**, a full-duplex spoken language model, can be adapted to better handle complex mathematical question answering through parameter-efficient fine-tuning. The research explores the intersection of spoken dialogue systems and mathematical reasoning, proposing a novel pipeline that converts reasoning-augmented text data into stereo audio for LoRA-based adaptation of a pretrained speech model.
+## Drive Link (Checkpoints, Codes & Environments)
+
+All trained checkpoints, preprocessed datasets, TTS-generated audio, environment snapshots, and full training logs are available at:
+
+** https://drive.google.com/file/d/1L2OBo9zhhE1guS33q1_MIXnBH__fPC6X/view?usp=sharing **
 
 ### Research Highlights
 
@@ -67,38 +72,6 @@ python evaluate.py \
   --model_path ./checkpoints/final \
   --test_data ./data/test_samples.jsonl \
   --output results/comparison_report.csv
-```
-
-## Project Structure
-
-```
-Project-CSE465--MATH-MOSHI/
-├── README.md                          # This file
-├── report.tex                         # Full project report (LaTeX)
-├── requirements.txt                   # Python dependencies
-├── processed_dataset.jsonl            # Math reasoning dataset
-├── processed_dataset.csv              # Dataset in CSV format
-├── build_moshi_stereo.py             # Stereo audio conversion script
-├── evaluate.py                        # Evaluation script
-├── training_config.yaml               # LoRA fine-tuning configuration
-├── moshi-finetune/
-│   ├── train.py                       # Main training script
-│   └── config.py                      # Training configuration parser
-├── data/
-│   ├── daily-talk-contiguous/        # Stereo audio training data
-│   └── test_samples.jsonl            # Test evaluation samples
-├── checkpoints/                       # Saved model checkpoints
-│   ├── checkpoint-20/                # Intermediate checkpoint
-│   ├── checkpoint-40/                # Intermediate checkpoint
-│   └── checkpoint-100/               # Final checkpoint with LoRA adapters
-└── results/
-    ├── comparison_report.csv         # Evaluation results
-    ├── loss.png                      # Training loss curve
-    ├── throughput.png                # Throughput curve
-    ├── learning_rate.png             # Learning rate schedule
-    ├── probability.png               # Token probability curve
-    └── gpu_usage.png                 # GPU memory usage curve
-```
 
 ## Key Features
 
@@ -124,86 +97,12 @@ Project-CSE465--MATH-MOSHI/
 - Token probability statistics
 - GPU utilization monitoring
 
-## Performance Summary
-
-| Metric | Value | Interpretation |
-|--------|-------|-----------------|
-| **Mean WER** | 0.95 - 1.12 | Surface-level word alignment with challenges |
-| **Mean Semantic Similarity** | 0.47 - 0.68 | Moderate semantic alignment on test set |
-| **Training Loss Trend** | Decreasing (with spikes) | Model learning despite limited data |
-| **GPU Memory Usage** | ~20-24 GB | Optimized for constrained environments |
-| **Training Time** | ~2 hours (RTX 3090) | Efficient fine-tuning loop |
-
-### Results Analysis
-- **Strengths**: Improved mathematical terminology recognition, better number handling, traces of reasoning patterns
-- **Limitations**: Sequence truncation above ~30 seconds, weak end-task accuracy on complex reasoning, limited training data (100 examples)
-- **Conclusion**: Proof-of-concept successful; strong performance requires larger datasets and more GPU memory
-
-## Training Configuration
-
-```yaml
-# Data
-data:
-  train_data: '/content/data/daily-talk-contiguous/dailytalk.jsonl'
-  shuffle: true
-
-# Model
-moshi_paths:
-  hf_repo_id: "kyutai/moshiko-pytorch-bf16"
-
-# LoRA Configuration
-full_finetuning: false
-lora:
-  enable: true
-  rank: 8
-  scaling: 4.0
-  ft_embed: false
-
-# Training Hyperparameters
-duration_sec: 10
-batch_size: 1
-max_steps: 100
-gradient_checkpointing: true
-
-# Optimization
-optim:
-  lr: 2.e-6
-  weight_decay: 0.1
-  pct_start: 0.05
-
-# Checkpointing
-ckpt_freq: 20
-save_adapters: true
-run_dir: "/content/test"
-```
-
-## Drive Link (Checkpoints, Codes & Environments)
-
-All trained checkpoints, preprocessed datasets, TTS-generated audio, environment snapshots, and full training logs are available at:
-
-**[Google Drive Link - To be provided]**
-
-The drive contains:
-- ✅ **Checkpoint-20, Checkpoint-40, Checkpoint-100** (with LoRA adapters)
-- ✅ **Preprocessed stereo audio dataset** (daily-talk-contiguous/)
-- ✅ **Training logs and metrics** (loss, throughput, GPU stats)
-- ✅ **Evaluation results** (comparison reports and WER scores)
-- ✅ **Environment snapshot** (Python dependencies, package versions)
-- ✅ **Inference code** (for running fine-tuned model)
 
 > Note: Due to file size limitations, checkpoints and audio data are hosted on Google Drive. Clone this repository and use the drive link to download the large artifacts.
 
 ## Reproduction Instructions
 
 For detailed step-by-step reproduction instructions with automatic execution via autonomous agents, see **Section D: Agent Reproduction Prompt** in the full [report.tex](report.tex).
-
-Quick summary:
-1. Clone repository and install dependencies
-2. Download pretrained Moshi checkpoint
-3. Run stereo audio conversion on dataset
-4. Execute fine-tuning with provided YAML config
-5. Evaluate model on test samples
-6. Compare results against expected metrics
 
 ## System Requirements
 
