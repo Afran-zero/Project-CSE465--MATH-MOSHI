@@ -1,1 +1,7 @@
 
+https://www.kaggle.com/datasets/nbmproject/nbmmoshi-cot-checkpoints
+https://www.kaggle.com/datasets/nbmproject/nbmmoshi-cot-checkpoint-2
+https://www.kaggle.com/datasets/nbmproject/nbmmoshi-cot-checkpoint-3
+https://www.kaggle.com/datasets/nbmproject/nbmmoshi-cot-checkpoint-4
+
+https://www.kaggle.com/datasets/nbmproject/xtts-real-audio-dataset (Audio Dataset)
