@@ -121,18 +121,9 @@ For detailed step-by-step reproduction instructions with automatic execution via
 - **Chain-of-Thought**: Wei et al., "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models" (2022)
 - **TTS**: Coqui TTS and related speech synthesis frameworks
 
-## Citation
 
-If you use this project in your research, please cite:
 
-```bibtex
-@article{tamim2024mathMoshi,
-  title={Math Moshi: Teaching Moshi to Handle Complex Math Questions},
-  author={Tamim, Md Sabbir Hossain and Afran, Md Kaif and Shamim, Sumaiya Binte},
-  journal={CSE465 Pattern Recognition and Neural Networks Project},
-  school={North South University},
-  year={2024}
-}
+
 ```
 
 ## License
