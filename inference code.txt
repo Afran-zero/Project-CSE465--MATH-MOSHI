@@ -1,0 +1,1 @@
+moshi-finetune>python -m moshi.server --lora-weight="moshi_data\checkpoints\checkpoint_000100\consolidated\lora.safetensors" --config-path="moshi_data\checkpoints\checkpoint_000100\consolidated\config.json
